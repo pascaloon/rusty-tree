@@ -134,14 +134,6 @@ fn main() {
     } else {
         std::env::current_dir().unwrap().join(path_str)
     };
-    // let path = path_init.clone();
-
-    // if Path::new(path_str).is_relative()
-    // {
-    //     let c_dir = std::env::current_dir().unwrap();
-    //     path = c_dir.join(path_init).as_path();
-
-    // }
 
     println!("{}", path.to_str().unwrap());
 
@@ -152,18 +144,6 @@ fn main() {
 
 
     list_files(&path, &renderer);
-
-    // let rust_icon = icons.files.extensions.get(".rs").unwrap();
-    // let rust_color = colors.files.extensions.get(".rs").unwrap();
-    // let rust_glyph = glyphs.get(rust_icon).unwrap();
-    // let rust_style = hex_to_color(rust_color).bold();
-    // println!("rust icon: {} -> {}", rust_style.paint(rust_icon), rust_style.paint(rust_glyph));
-
-    // let cs_icon = icons.files.extensions.get(".cs").unwrap();
-    // let cs_color = colors.files.extensions.get(".cs").unwrap();
-    // let cs_glyph = glyphs.get(cs_icon).unwrap();
-    // let cs_style = hex_to_color(cs_color).bold();
-    // println!("rust icon: {} -> {}", cs_style.paint(cs_icon), cs_style.paint(cs_glyph));
 }
 
 fn load_glyphs() -> HashMap<String, String> {
