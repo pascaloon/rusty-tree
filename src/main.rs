@@ -59,14 +59,22 @@ struct Settings {
     ignored_dirs: Vec<String>,
 }
 
+impl Settings {
+    fn is_dir_ignored(&self, path: &PathBuf) -> bool {
+        self.ignored_dirs
+            .iter()
+            .any(|f| path.ends_with(f))
+    }
+}
+
 #[derive(Clone)]
-struct Renderer {
+struct Renderer<'a> {
     glyphs: HashMap<String, String>,
     icons: IconSet,
     colors: ColorSet,
-    settings: Settings
+    settings: &'a Settings
 }
-impl Renderer {
+impl<'a> Renderer<'a> {
     pub fn render_file(&self, path: &PathBuf) {
         let filename_os = path.file_name().unwrap();
         let filename = filename_os.to_str().unwrap();
@@ -127,12 +135,6 @@ impl Renderer {
             println!("{} {}", style.paint(glyph), style.paint(filename));
         }
     }
-
-    fn is_dir_ignored(&self, path: &PathBuf) -> bool {
-        self.settings.ignored_dirs
-            .iter()
-            .any(|f| path.ends_with(f))
-    }
 }
 
 struct RenderItem {
@@ -167,23 +169,23 @@ fn main() {
 
     let current_exe = std::env::current_exe().unwrap();
     let data_dir = current_exe.parent().unwrap().join("../..");
-    let glyphs = load_glyphs(data_dir.as_path());
-    let icons = load_icons(data_dir.as_path());
-    let colors = load_colors(data_dir.as_path());
-    let settings = load_settings(data_dir.as_path());
-    let renderer = Renderer {glyphs, icons, colors, settings};
+    let data_dir_path = data_dir.as_path();
+
+    let glyphs = load_glyphs(data_dir_path);
+    let icons = load_icons(data_dir_path);
+    let colors = load_colors(data_dir_path);
+    let settings = load_settings(data_dir_path);
+    let renderer = Renderer {glyphs, icons, colors, settings: &settings};
 
     let (tx, rx) = flume::unbounded();
 
-    unsafe {
-        let path_ref = path;
-        let renderer_ref = renderer.clone();
-        let tx_ref = tx;
-    
-        thread::spawn(move || {
-            list_files(&path_ref, &renderer_ref, 0, &tx_ref);
-        });
-    }
+    let path_ref = path;
+    let settings = settings.clone();
+    let tx_ref = tx;
+
+    thread::spawn(move || {
+        list_files(&path_ref, &settings, 0, &tx_ref);
+    });
 
 
     render_files(&renderer, rx);
@@ -246,7 +248,7 @@ fn render_files(renderer: &Renderer, rx: Receiver<RenderItem>) {
     }
 }
 
-fn list_files(path: &PathBuf, renderer: &Renderer, depth: usize, tx: &Sender<RenderItem>) {
+fn list_files(path: &PathBuf, settings: &Settings, depth: usize, tx: &Sender<RenderItem>) {
     let paths = fs::read_dir(path).unwrap();
     let mut files: Vec<DirEntry> = Vec::with_capacity(32);
     let mut dirs: Vec<DirEntry> = Vec::with_capacity(32);
@@ -277,7 +279,7 @@ fn list_files(path: &PathBuf, renderer: &Renderer, depth: usize, tx: &Sender<Ren
 
     for dir in dirs {
         let path = dir.path();
-        let is_ignored = renderer.is_dir_ignored(&path);
+        let is_ignored = settings.is_dir_ignored(&path);
 
         c +=1;
         let is_last = c == total;
@@ -291,7 +293,7 @@ fn list_files(path: &PathBuf, renderer: &Renderer, depth: usize, tx: &Sender<Ren
         }).unwrap();
 
         if !is_ignored {
-            list_files(&dir.path(), renderer, depth+1, tx);
+            list_files(&dir.path(), settings, depth+1, tx);
         }
     }
 }
