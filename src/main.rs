@@ -35,7 +35,16 @@ fn main() {
     //     println!("{}: {}", key, icon);
     // }
 
-    let icon_set = load_icons();
+    let glyphs = load_glyphs();
+    let icons = load_icons();
+    
+    let rust_icon = icons.files.extensions.get(".rs").unwrap();
+    let rust_glyph = glyphs.get(rust_icon).unwrap();
+    println!("rust icon: {} -> {}", rust_icon, rust_glyph);
+
+    let cs_icon = icons.files.extensions.get(".cs").unwrap();
+    let cs_glyph = glyphs.get(cs_icon).unwrap();
+    println!("cs icon: {} -> {}", cs_icon, cs_glyph);
 }
 
 fn load_glyphs() -> HashMap<String, String> {
