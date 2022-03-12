@@ -30,6 +30,7 @@ struct IconSet {
 #[derive(Deserialize, Debug)]
 struct DirectoryColorSet {
     default: String,
+    ignored: String,
     symlink: String,
     junction: String,
     wellknown: HashMap<String, String>
@@ -110,24 +111,28 @@ impl Renderer {
             };
         let glyph = self.glyphs.get(icon).unwrap();
 
+        if ignored {
+            let color = &self.colors.directories.ignored;
+            let style = hex_to_color(color).normal();
+            println!("{} {}{}", style.paint(glyph), style.paint(filename), style.paint("/..."));
+
+        } else {
+            let color = 
+                if let Some(color) = self.colors.directories.wellknown.get(filename) {
+                    color
+                } else {
+                    &self.colors.directories.default
+                };
+            let style = hex_to_color(color).normal();
+            println!("{} {}", style.paint(glyph), style.paint(filename));
+        }
+
         let color = 
             if let Some(color) = self.colors.directories.wellknown.get(filename) {
                 color
             } else {
                 &self.colors.directories.default
         };
-
-        let color = hex_to_color(color);
-        let style = if ignored {
-                color.italic()
-            } else {
-                color.normal()
-            };
-        if ignored {
-            println!("{} {}{}", style.paint(glyph), style.paint(filename), style.paint("/..."));
-        } else {
-            println!("{} {}", style.paint(glyph), style.paint(filename));
-        }
     }
 
     fn is_dir_ignored(&self, file: &DirEntry) -> bool {

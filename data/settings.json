@@ -1,6 +1,9 @@
 {
     "ignored_dirs": [
         ".git",
-        "target"
+        ".fingerprint",
+        "target/debug",
+        "target/release",
+        "target/rls"
     ]
 }

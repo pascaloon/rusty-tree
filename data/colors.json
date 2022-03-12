@@ -1,6 +1,7 @@
 {
     "directories": {
         "default": "FFFFFF",
+        "ignored": "444444",
         "symlink": "7373ff",
         "junction": "7373ff",
         "wellknown": {
