@@ -1,4 +1,5 @@
 use std::{path::Path, fs::File, io::BufReader, collections::HashMap};
+use ansi_term::{Style, Color};
 use serde_derive::Deserialize;
 
 #[derive(Deserialize, Debug)]
@@ -65,12 +66,14 @@ fn main() {
     let rust_icon = icons.files.extensions.get(".rs").unwrap();
     let rust_color = colors.files.extensions.get(".rs").unwrap();
     let rust_glyph = glyphs.get(rust_icon).unwrap();
-    println!("rust icon: {} -> {} [{}]", rust_icon, rust_glyph, rust_color);
+    let rust_style = hex_to_color(rust_color).bold();
+    println!("rust icon: {} -> {}", rust_style.paint(rust_icon), rust_style.paint(rust_glyph));
 
     let cs_icon = icons.files.extensions.get(".cs").unwrap();
     let cs_color = colors.files.extensions.get(".cs").unwrap();
     let cs_glyph = glyphs.get(cs_icon).unwrap();
-    println!("cs icon: {} -> {} [{}]", cs_icon, cs_glyph, cs_color);
+    let cs_style = hex_to_color(cs_color).bold();
+    println!("rust icon: {} -> {}", cs_style.paint(cs_icon), cs_style.paint(cs_glyph));
 }
 
 fn load_glyphs() -> HashMap<String, String> {
@@ -92,4 +95,11 @@ fn load_colors() -> ColorSet {
     let file = File::open(path).unwrap();
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).unwrap()
+}
+
+fn hex_to_color(hex: &String) -> Color{
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap();
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap();
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap();
+    Color::RGB(r, g, b)
 }
