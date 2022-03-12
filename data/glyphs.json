@@ -1,4 +1,9 @@
 {
+    "pipe-v": "│",
+    "pipe-h": "─",
+    "pipe-t": "├",
+    "pipe-e": "└",
+
     "nf-custom-c"                                    : "",
     "nf-custom-cpp"                                  : "",
     "nf-custom-electron"                             : "",

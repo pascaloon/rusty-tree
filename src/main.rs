@@ -1,4 +1,4 @@
-use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap, str::FromStr};
+use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap};
 use ansi_term::{Color};
 use serde_derive::Deserialize;
 use clap::{Arg, App};
@@ -126,13 +126,6 @@ impl Renderer {
             let style = hex_to_color(color).normal();
             println!("{} {}", style.paint(glyph), style.paint(filename));
         }
-
-        let color = 
-            if let Some(color) = self.colors.directories.wellknown.get(filename) {
-                color
-            } else {
-                &self.colors.directories.default
-        };
     }
 
     fn is_dir_ignored(&self, file: &DirEntry) -> bool {
@@ -166,39 +159,41 @@ fn main() {
 
     println!("{}", path.to_str().unwrap());
 
-    let glyphs = load_glyphs();
-    let icons = load_icons();
-    let colors = load_colors();
-    let settings = load_settings();
+    let current_exe = std::env::current_exe().unwrap();
+    let data_dir = current_exe.parent().unwrap().join("../..");
+    let glyphs = load_glyphs(data_dir.as_path());
+    let icons = load_icons(data_dir.as_path());
+    let colors = load_colors(data_dir.as_path());
+    let settings = load_settings(data_dir.as_path());
     let renderer = Renderer {glyphs, icons, colors, settings};
 
 
     list_files(&path, &renderer, 0);
 }
 
-fn load_glyphs() -> HashMap<String, String> {
-    let path = Path::new("data/glyphs.json");
+fn load_glyphs(path: &Path) -> HashMap<String, String> {
+    let path = path.join("data/glyphs.json");
     let file = File::open(path).unwrap();
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).unwrap()
 }
 
-fn load_icons() -> IconSet {
-    let path = Path::new("data/icons.json");
+fn load_icons(path: &Path) -> IconSet {
+    let path = path.join("data/icons.json");
     let file = File::open(path).unwrap();
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).unwrap()
 }
 
-fn load_colors() -> ColorSet {
-    let path = Path::new("data/colors.json");
+fn load_colors(path: &Path) -> ColorSet {
+    let path = path.join("data/colors.json");
     let file = File::open(path).unwrap();
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).unwrap()
 }
 
-fn load_settings() -> Settings {
-    let path = Path::new("data/settings.json");
+fn load_settings(path: &Path) -> Settings {
+    let path = path.join("data/settings.json");
     let file = File::open(path).unwrap();
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).unwrap()
