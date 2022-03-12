@@ -1,4 +1,4 @@
-use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap, thread};
+use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap, thread, str::FromStr};
 use ansi_term::{Color};
 use flume::{Sender, Receiver};
 use serde_derive::Deserialize;
@@ -163,9 +163,10 @@ fn main() {
         PathBuf::from(path_str)
     } else {
         std::env::current_dir().unwrap().join(path_str)
-    };
-
-    println!("{}", path.to_str().unwrap());
+    }.canonicalize().unwrap();
+    let path = path.to_str().unwrap().strip_prefix(r"\\?\").unwrap_or(path.to_str().unwrap());
+    println!("{}", path);
+    let path = PathBuf::from_str(path).unwrap();
 
     let current_exe = std::env::current_exe().unwrap();
     let data_dir = current_exe.parent().unwrap().join("../..");
