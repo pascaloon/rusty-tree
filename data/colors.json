@@ -1,6 +1,6 @@
 {
     "directories": {
-        "default": "",
+        "default": "FFFFFF",
         "symlink": "7373ff",
         "junction": "7373ff",
         "wellknown": {
@@ -44,7 +44,7 @@
         }
     },
     "files": {
-        "default": "",
+        "default": "FFFFFF",
         "symlink"  : "7373ff",
         "junction" : "7373ff",
         "wellknown" : {

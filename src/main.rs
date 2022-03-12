@@ -1,6 +1,7 @@
-use std::{path::Path, fs::File, io::BufReader, collections::HashMap};
-use ansi_term::{Style, Color};
+use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap};
+use ansi_term::{Color};
 use serde_derive::Deserialize;
+use clap::{Arg, App};
 
 #[derive(Deserialize, Debug)]
 struct DirectoryIconSet {
@@ -50,30 +51,119 @@ struct ColorSet {
     files: FileColorSet
 }
 
+struct Renderer {
+    glyphs: HashMap<String, String>,
+    icons: IconSet,
+    colors: ColorSet
+}
+impl Renderer {
+    pub fn render_file(&self, file: &DirEntry) {
+        let filename_os = file.file_name();
+        let filename = filename_os.to_str().unwrap();
+
+        let path = file.path();
+        let extension = match path.extension() {
+            Some(ext) => ext.to_str().unwrap(),
+            None => ""
+        };
+
+        let icon = 
+            if let Some(icon) = self.icons.files.wellknown.get(filename) {
+                icon
+            } else if let Some(icon) = self.icons.files.extensions.get(extension) {
+                icon
+            } else {
+                &self.icons.files.default
+            };
+        let glyph = self.glyphs.get(icon).unwrap();
+
+        let color = 
+            if let Some(color) = self.colors.files.wellknown.get(filename) {
+                color
+            } else if let Some(color) = self.colors.files.extensions.get(extension) {
+                color
+            } else {
+                &self.colors.files.default
+        };
+
+        let style = hex_to_color(color).normal();
+        println!("{} {}", style.paint(glyph), style.paint(filename));
+    }
+
+    pub fn render_dir(&self, file: &DirEntry) {
+        let filename_os = file.file_name();
+        let filename = filename_os.to_str().unwrap();
+
+        let icon = 
+            if let Some(icon) = self.icons.directories.wellknown.get(filename) {
+                icon
+            } else {
+                &self.icons.directories.default
+            };
+        let glyph = self.glyphs.get(icon).unwrap();
+
+        let color = 
+            if let Some(color) = self.colors.directories.wellknown.get(filename) {
+                color
+            } else {
+                &self.colors.directories.default
+        };
+
+        let style = hex_to_color(color).normal();
+        println!("{} {}", style.paint(glyph), style.paint(filename));
+    }
+}
+
+
 fn main() {
 
-    // let branch_icon = dict.get("nf-dev-git_branch").unwrap();
-    // println!("icon: {}", branch_icon);
+    let app_args = App::new("rusty-tree")
+                          .version("1.0")
+                          .author("pascaloon")
+                          .about("shows file tree")
+                          .arg(Arg::with_name("PATH")
+                               .help("Path to render tree")
+                               .required(false)
+                               .index(1))
+                          .get_matches();
 
-    // for (key, icon) in &dict {
-    //     println!("{}: {}", key, icon);
+    let path_str = app_args.value_of("PATH").unwrap_or(".");
+
+    let path: PathBuf = if Path::new(path_str).is_absolute() {
+        PathBuf::from(path_str)
+    } else {
+        std::env::current_dir().unwrap().join(path_str)
+    };
+    // let path = path_init.clone();
+
+    // if Path::new(path_str).is_relative()
+    // {
+    //     let c_dir = std::env::current_dir().unwrap();
+    //     path = c_dir.join(path_init).as_path();
+
     // }
+
+    println!("{}", path.to_str().unwrap());
 
     let glyphs = load_glyphs();
     let icons = load_icons();
     let colors = load_colors();
-    
-    let rust_icon = icons.files.extensions.get(".rs").unwrap();
-    let rust_color = colors.files.extensions.get(".rs").unwrap();
-    let rust_glyph = glyphs.get(rust_icon).unwrap();
-    let rust_style = hex_to_color(rust_color).bold();
-    println!("rust icon: {} -> {}", rust_style.paint(rust_icon), rust_style.paint(rust_glyph));
+    let renderer = Renderer {glyphs, icons, colors};
 
-    let cs_icon = icons.files.extensions.get(".cs").unwrap();
-    let cs_color = colors.files.extensions.get(".cs").unwrap();
-    let cs_glyph = glyphs.get(cs_icon).unwrap();
-    let cs_style = hex_to_color(cs_color).bold();
-    println!("rust icon: {} -> {}", cs_style.paint(cs_icon), cs_style.paint(cs_glyph));
+
+    list_files(&path, &renderer);
+
+    // let rust_icon = icons.files.extensions.get(".rs").unwrap();
+    // let rust_color = colors.files.extensions.get(".rs").unwrap();
+    // let rust_glyph = glyphs.get(rust_icon).unwrap();
+    // let rust_style = hex_to_color(rust_color).bold();
+    // println!("rust icon: {} -> {}", rust_style.paint(rust_icon), rust_style.paint(rust_glyph));
+
+    // let cs_icon = icons.files.extensions.get(".cs").unwrap();
+    // let cs_color = colors.files.extensions.get(".cs").unwrap();
+    // let cs_glyph = glyphs.get(cs_icon).unwrap();
+    // let cs_style = hex_to_color(cs_color).bold();
+    // println!("rust icon: {} -> {}", cs_style.paint(cs_icon), cs_style.paint(cs_glyph));
 }
 
 fn load_glyphs() -> HashMap<String, String> {
@@ -97,9 +187,21 @@ fn load_colors() -> ColorSet {
     serde_json::from_reader(reader).unwrap()
 }
 
-fn hex_to_color(hex: &String) -> Color{
+fn hex_to_color(hex: &String) -> Color {
     let r = u8::from_str_radix(&hex[0..2], 16).unwrap();
     let g = u8::from_str_radix(&hex[2..4], 16).unwrap();
     let b = u8::from_str_radix(&hex[4..6], 16).unwrap();
     Color::RGB(r, g, b)
+}
+
+fn list_files(path: &PathBuf, renderer: &Renderer) {
+    let paths = fs::read_dir(path).unwrap();
+    for path in paths {
+        let path = path.unwrap();
+        if path.file_type().unwrap().is_dir() {
+            renderer.render_dir(&path);
+        } else {
+            renderer.render_file(&path);
+        }
+    }
 }
