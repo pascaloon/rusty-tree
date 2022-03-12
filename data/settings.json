@@ -1,0 +1,6 @@
+{
+    "ignored_dirs": [
+        ".git",
+        "target"
+    ]
+}

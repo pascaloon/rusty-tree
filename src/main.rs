@@ -1,4 +1,4 @@
-use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap};
+use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap, str::FromStr};
 use ansi_term::{Color};
 use serde_derive::Deserialize;
 use clap::{Arg, App};
@@ -51,10 +51,18 @@ struct ColorSet {
     files: FileColorSet
 }
 
+
+#[derive(Deserialize, Debug)]
+struct Settings {
+    ignored_dirs: Vec<String>,
+}
+
+
 struct Renderer {
     glyphs: HashMap<String, String>,
     icons: IconSet,
-    colors: ColorSet
+    colors: ColorSet,
+    settings: Settings
 }
 impl Renderer {
     pub fn render_file(&self, file: &DirEntry) {
@@ -90,7 +98,7 @@ impl Renderer {
         println!("{} {}", style.paint(glyph), style.paint(filename));
     }
 
-    pub fn render_dir(&self, file: &DirEntry) {
+    pub fn render_dir(&self, file: &DirEntry, ignored: bool) {
         let filename_os = file.file_name();
         let filename = filename_os.to_str().unwrap();
 
@@ -109,8 +117,24 @@ impl Renderer {
                 &self.colors.directories.default
         };
 
-        let style = hex_to_color(color).normal();
-        println!("{} {}", style.paint(glyph), style.paint(filename));
+        let color = hex_to_color(color);
+        let style = if ignored {
+                color.italic()
+            } else {
+                color.normal()
+            };
+        if ignored {
+            println!("{} {}{}", style.paint(glyph), style.paint(filename), style.paint("/..."));
+        } else {
+            println!("{} {}", style.paint(glyph), style.paint(filename));
+        }
+    }
+
+    fn is_dir_ignored(&self, file: &DirEntry) -> bool {
+        let path = file.path();
+        self.settings.ignored_dirs
+            .iter()
+            .any(|f| path.ends_with(f))
     }
 }
 
@@ -140,7 +164,8 @@ fn main() {
     let glyphs = load_glyphs();
     let icons = load_icons();
     let colors = load_colors();
-    let renderer = Renderer {glyphs, icons, colors};
+    let settings = load_settings();
+    let renderer = Renderer {glyphs, icons, colors, settings};
 
 
     list_files(&path, &renderer, 0);
@@ -167,6 +192,14 @@ fn load_colors() -> ColorSet {
     serde_json::from_reader(reader).unwrap()
 }
 
+fn load_settings() -> Settings {
+    let path = Path::new("data/settings.json");
+    let file = File::open(path).unwrap();
+    let reader = BufReader::new(file);
+    serde_json::from_reader(reader).unwrap()
+}
+
+
 fn hex_to_color(hex: &String) -> Color {
     let r = u8::from_str_radix(&hex[0..2], 16).unwrap();
     let g = u8::from_str_radix(&hex[2..4], 16).unwrap();
@@ -181,20 +214,14 @@ fn list_files(path: &PathBuf, renderer: &Renderer, depth: usize) {
         let path = path.unwrap();
         if path.file_type().unwrap().is_dir() {
             print!("{}", &spaces[0..(depth*2)]);
-            renderer.render_dir(&path);
-            if !is_dir_ignored(&path) {
+            let is_ignored = renderer.is_dir_ignored(&path);
+            renderer.render_dir(&path, is_ignored);
+            if !is_ignored {
                 list_files(&path.path(), renderer, depth+1);
             }
         } else {
             print!("{}", &spaces[0..(depth*2)]);
             renderer.render_file(&path);
         }
-    }
-}
-
-fn is_dir_ignored(dir: &DirEntry) -> bool {
-    match dir.file_name().to_str().unwrap() {
-        ".git" => true,
-        _ => false
     }
 }
