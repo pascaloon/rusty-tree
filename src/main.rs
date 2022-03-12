@@ -143,7 +143,7 @@ fn main() {
     let renderer = Renderer {glyphs, icons, colors};
 
 
-    list_files(&path, &renderer);
+    list_files(&path, &renderer, 0);
 }
 
 fn load_glyphs() -> HashMap<String, String> {
@@ -174,14 +174,27 @@ fn hex_to_color(hex: &String) -> Color {
     Color::RGB(r, g, b)
 }
 
-fn list_files(path: &PathBuf, renderer: &Renderer) {
+fn list_files(path: &PathBuf, renderer: &Renderer, depth: usize) {
+    let spaces = "                                    ";
     let paths = fs::read_dir(path).unwrap();
     for path in paths {
         let path = path.unwrap();
         if path.file_type().unwrap().is_dir() {
+            print!("{}", &spaces[0..(depth*2)]);
             renderer.render_dir(&path);
+            if !is_dir_ignored(&path) {
+                list_files(&path.path(), renderer, depth+1);
+            }
         } else {
+            print!("{}", &spaces[0..(depth*2)]);
             renderer.render_file(&path);
         }
+    }
+}
+
+fn is_dir_ignored(dir: &DirEntry) -> bool {
+    match dir.file_name().to_str().unwrap() {
+        ".git" => true,
+        _ => false
     }
 }
