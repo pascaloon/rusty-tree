@@ -1,4 +1,4 @@
-use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap};
+use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry, FileType}, io::BufReader, collections::HashMap};
 use ansi_term::{Color};
 use serde_derive::Deserialize;
 use clap::{Arg, App};
@@ -208,20 +208,57 @@ fn hex_to_color(hex: &String) -> Color {
 }
 
 fn list_files(path: &PathBuf, renderer: &Renderer, depth: usize) {
-    let spaces = "                                    ";
     let paths = fs::read_dir(path).unwrap();
+    let mut files: Vec<DirEntry> = Vec::with_capacity(32);
+    let mut dirs: Vec<DirEntry> = Vec::with_capacity(32);
     for path in paths {
         let path = path.unwrap();
         if path.file_type().unwrap().is_dir() {
-            print!("{}", &spaces[0..(depth*2)]);
-            let is_ignored = renderer.is_dir_ignored(&path);
-            renderer.render_dir(&path, is_ignored);
-            if !is_ignored {
-                list_files(&path.path(), renderer, depth+1);
-            }
+            dirs.push(path);
         } else {
-            print!("{}", &spaces[0..(depth*2)]);
-            renderer.render_file(&path);
+            files.push(path);
+        }
+    }
+
+    let total = files.len() + dirs.len();
+    let mut c = 0;
+
+    for file in files {
+        for _ in 0..depth {
+            print!("{}  ", renderer.glyphs.get("pipe-v").unwrap());
+        }
+
+        c +=1;
+        if c == total {
+            print!("{}", renderer.glyphs.get("pipe-e").unwrap());
+        } else {
+            print!("{}", renderer.glyphs.get("pipe-t").unwrap());
+        }
+
+        print!("{} ", renderer.glyphs.get("pipe-h").unwrap());
+
+        renderer.render_file(&file);
+    }
+
+    for dir in dirs {
+        for _ in 0..depth {
+            print!("{}  ", renderer.glyphs.get("pipe-v").unwrap());
+        }
+        let is_ignored = renderer.is_dir_ignored(&dir);
+
+        c +=1;
+        if c == total && is_ignored {
+            print!("{}", renderer.glyphs.get("pipe-e").unwrap());
+        } else {
+            print!("{}", renderer.glyphs.get("pipe-t").unwrap());
+        }
+
+        print!("{} ", renderer.glyphs.get("pipe-h").unwrap());
+
+
+        renderer.render_dir(&dir, is_ignored);
+        if !is_ignored {
+            list_files(&dir.path(), renderer, depth+1);
         }
     }
 }
