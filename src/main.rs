@@ -1,9 +1,10 @@
-use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap};
+use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap, thread};
 use ansi_term::{Color};
+use flume::{Sender, Receiver};
 use serde_derive::Deserialize;
 use clap::{Arg, App};
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct DirectoryIconSet {
     default: String,
     symlink: String,
@@ -11,7 +12,7 @@ struct DirectoryIconSet {
     wellknown: HashMap<String, String>
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct FileIconSet {
     default: String,
     symlink: String,
@@ -21,13 +22,13 @@ struct FileIconSet {
 }
 
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct IconSet {
     directories: DirectoryIconSet,
     files: FileIconSet
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct DirectoryColorSet {
     default: String,
     ignored: String,
@@ -36,7 +37,7 @@ struct DirectoryColorSet {
     wellknown: HashMap<String, String>
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct FileColorSet {
     default: String,
     symlink: String,
@@ -46,19 +47,19 @@ struct FileColorSet {
 }
 
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct ColorSet {
     directories: DirectoryColorSet,
     files: FileColorSet
 }
 
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct Settings {
     ignored_dirs: Vec<String>,
 }
 
-
+#[derive(Clone)]
 struct Renderer {
     glyphs: HashMap<String, String>,
     icons: IconSet,
@@ -66,11 +67,10 @@ struct Renderer {
     settings: Settings
 }
 impl Renderer {
-    pub fn render_file(&self, file: &DirEntry) {
-        let filename_os = file.file_name();
+    pub fn render_file(&self, path: &PathBuf) {
+        let filename_os = path.file_name().unwrap();
         let filename = filename_os.to_str().unwrap();
 
-        let path = file.path();
         let extension = match path.extension() {
             Some(ext) => ext.to_str().unwrap(),
             None => ""
@@ -99,8 +99,8 @@ impl Renderer {
         println!("{} {}", style.paint(glyph), style.paint(filename));
     }
 
-    pub fn render_dir(&self, file: &DirEntry, ignored: bool) {
-        let filename_os = file.file_name();
+    pub fn render_dir(&self, path: &PathBuf, ignored: bool) {
+        let filename_os = path.file_name().unwrap();
         let filename = filename_os.to_str().unwrap();
 
         let icon = 
@@ -128,14 +128,20 @@ impl Renderer {
         }
     }
 
-    fn is_dir_ignored(&self, file: &DirEntry) -> bool {
-        let path = file.path();
+    fn is_dir_ignored(&self, path: &PathBuf) -> bool {
         self.settings.ignored_dirs
             .iter()
             .any(|f| path.ends_with(f))
     }
 }
 
+struct RenderItem {
+    path: PathBuf,
+    is_dir: bool,
+    is_last: bool,
+    is_leaf: bool,
+    depth: usize
+}
 
 fn main() {
 
@@ -167,8 +173,20 @@ fn main() {
     let settings = load_settings(data_dir.as_path());
     let renderer = Renderer {glyphs, icons, colors, settings};
 
+    let (tx, rx) = flume::unbounded();
 
-    list_files(&path, &renderer, 0);
+    unsafe {
+        let path_ref = path;
+        let renderer_ref = renderer.clone();
+        let tx_ref = tx;
+    
+        thread::spawn(move || {
+            list_files(&path_ref, &renderer_ref, 0, &tx_ref);
+        });
+    }
+
+
+    render_files(&renderer, rx);
 }
 
 fn load_glyphs(path: &Path) -> HashMap<String, String> {
@@ -207,7 +225,28 @@ fn hex_to_color(hex: &String) -> Color {
     Color::RGB(r, g, b)
 }
 
-fn list_files(path: &PathBuf, renderer: &Renderer, depth: usize) {
+fn render_files(renderer: &Renderer, rx: Receiver<RenderItem>) {
+    for item in rx.iter() {
+        for _ in 0..item.depth {
+            print!("{}  ", renderer.glyphs.get("pipe-v").unwrap());
+        }
+
+        if item.is_last && item.is_leaf {
+            print!("{}", renderer.glyphs.get("pipe-e").unwrap());
+        } else {
+            print!("{}", renderer.glyphs.get("pipe-t").unwrap());
+        }
+
+        print!("{} ", renderer.glyphs.get("pipe-h").unwrap());
+        if item.is_dir {
+            renderer.render_dir(&item.path, item.is_leaf);
+        } else {
+            renderer.render_file(&item.path);
+        }
+    }
+}
+
+fn list_files(path: &PathBuf, renderer: &Renderer, depth: usize, tx: &Sender<RenderItem>) {
     let paths = fs::read_dir(path).unwrap();
     let mut files: Vec<DirEntry> = Vec::with_capacity(32);
     let mut dirs: Vec<DirEntry> = Vec::with_capacity(32);
@@ -224,41 +263,35 @@ fn list_files(path: &PathBuf, renderer: &Renderer, depth: usize) {
     let mut c = 0;
 
     for file in files {
-        for _ in 0..depth {
-            print!("{}  ", renderer.glyphs.get("pipe-v").unwrap());
-        }
-
         c +=1;
-        if c == total {
-            print!("{}", renderer.glyphs.get("pipe-e").unwrap());
-        } else {
-            print!("{}", renderer.glyphs.get("pipe-t").unwrap());
-        }
+        let is_last = c == total;
 
-        print!("{} ", renderer.glyphs.get("pipe-h").unwrap());
-
-        renderer.render_file(&file);
+        tx.send(RenderItem {
+            path: file.path(),
+            is_dir: false,
+            depth: depth,
+            is_leaf: true,
+            is_last: is_last
+        }).unwrap();
     }
 
     for dir in dirs {
-        for _ in 0..depth {
-            print!("{}  ", renderer.glyphs.get("pipe-v").unwrap());
-        }
-        let is_ignored = renderer.is_dir_ignored(&dir);
+        let path = dir.path();
+        let is_ignored = renderer.is_dir_ignored(&path);
 
         c +=1;
-        if c == total && is_ignored {
-            print!("{}", renderer.glyphs.get("pipe-e").unwrap());
-        } else {
-            print!("{}", renderer.glyphs.get("pipe-t").unwrap());
-        }
+        let is_last = c == total;
 
-        print!("{} ", renderer.glyphs.get("pipe-h").unwrap());
+        tx.send(RenderItem {
+            path: path,
+            is_dir: true,
+            depth: depth,
+            is_leaf: is_ignored,
+            is_last: is_last
+        }).unwrap();
 
-
-        renderer.render_dir(&dir, is_ignored);
         if !is_ignored {
-            list_files(&dir.path(), renderer, depth+1);
+            list_files(&dir.path(), renderer, depth+1, tx);
         }
     }
 }
