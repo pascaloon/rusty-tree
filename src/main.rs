@@ -1,4 +1,4 @@
-use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry, FileType}, io::BufReader, collections::HashMap};
+use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap};
 use ansi_term::{Color};
 use serde_derive::Deserialize;
 use clap::{Arg, App};
