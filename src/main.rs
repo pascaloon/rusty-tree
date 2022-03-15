@@ -79,32 +79,45 @@ impl<'a> Renderer<'a> {
         let filename_os = path.file_name().unwrap();
         let filename = filename_os.to_str().unwrap();
 
-        let extension = match path.extension() {
-            Some(ext) => ext.to_str().unwrap(),
-            None => ""
-        };
-
         let icon = 
             if let Some(icon) = self.icons.files.wellknown.get(filename) {
                 icon
-            } else if let Some(icon) = self.icons.files.extensions.get(extension) {
+            } else if let Some(icon) = Self::find_item_from_extension(&self.icons.files.extensions, filename) {
                 icon
             } else {
                 &self.icons.files.default
             };
+
         let glyph = self.glyphs.get(icon).unwrap();
 
         let color = 
             if let Some(color) = self.colors.files.wellknown.get(filename) {
                 color
-            } else if let Some(color) = self.colors.files.extensions.get(extension) {
-                color
+            } else if let Some(icon) = Self::find_item_from_extension(&self.colors.files.extensions, filename) {
+                icon
             } else {
                 &self.colors.files.default
         };
 
         let style = hex_to_color(color).normal();
         println!("{} {}", style.paint(glyph), style.paint(filename));
+    }
+
+    fn find_item_from_extension<'b>(map: &'b HashMap<String, String>, filename: &str) -> Option<&'b String> {
+        if let Some(v) = map.get(filename) {
+            return Some(v);
+        }
+        for (pos, _) in filename.match_indices('.') {
+            let pos = pos + 1;
+            if pos < filename.len() {
+                let (_, ext) = filename.split_at(pos);
+                if let Some(v) = map.get(ext) {
+                    return Some(v);
+                }
+            }
+        }
+
+        None
     }
 
     pub fn render_dir(&self, path: &PathBuf, ignored: bool) {
@@ -136,6 +149,7 @@ impl<'a> Renderer<'a> {
         }
     }
 }
+
 
 struct RenderItem {
     path: PathBuf,
