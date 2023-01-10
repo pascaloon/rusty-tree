@@ -207,28 +207,24 @@ fn main() {
 }
 
 fn load_glyphs(path: &Path) -> HashMap<String, String> {
-    let path = path.join("data/glyphs.json");
-    let file = File::open(path).unwrap();
-    let reader = BufReader::new(file);
-    serde_json::from_reader(reader).unwrap()
+    load_from_file(&path.join("data/glyphs.json"))
 }
 
 fn load_icons(path: &Path) -> IconSet {
-    let path = path.join("data/icons.json");
-    let file = File::open(path).unwrap();
-    let reader = BufReader::new(file);
-    serde_json::from_reader(reader).unwrap()
+    load_from_file(&path.join("data/icons.json"))
 }
 
 fn load_colors(path: &Path) -> ColorSet {
-    let path = path.join("data/colors.json");
-    let file = File::open(path).unwrap();
-    let reader = BufReader::new(file);
-    serde_json::from_reader(reader).unwrap()
+    load_from_file(&path.join("data/colors.json"))
 }
 
 fn load_settings(path: &Path) -> Settings {
-    let path = path.join("data/settings.json");
+    load_from_file(&path.join("data/settings.json"))
+}
+
+fn load_from_file<T>(path: &PathBuf) -> T
+    where T: serde::de::DeserializeOwned,
+{
     let file = File::open(path).unwrap();
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).unwrap()
