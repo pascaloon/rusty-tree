@@ -1,8 +1,8 @@
-use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap, thread, str::FromStr};
+use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap, thread, str::FromStr, ffi::OsStr};
 use ansi_term::{Color};
 use flume::{Sender, Receiver};
 use serde_derive::Deserialize;
-use clap::{Arg, App};
+use clap::{Parser};
 
 #[derive(Deserialize, Debug, Clone)]
 struct DirectoryIconSet {
@@ -159,21 +159,26 @@ struct RenderItem {
     depth: usize
 }
 
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+   /// Name of the person to greet
+   #[clap()]
+   path: Option<String>,
+
+   #[arg(short, long, default_value_t = false)]
+   unfold: bool,
+}
+
+
 fn main() {
 
-    let app_args = App::new("rusty-tree")
-                          .version("1.0")
-                          .author("pascaloon")
-                          .about("shows file tree")
-                          .arg(Arg::with_name("PATH")
-                               .help("Path to render tree")
-                               .required(false)
-                               .index(1))
-                          .get_matches();
+    let app_args = Args::parse();
 
-    let path_str = app_args.value_of("PATH").unwrap_or(".");
+    let path_str = app_args.path.unwrap_or(".".to_string());
+    let unfold = app_args.unfold;
 
-    let path: PathBuf = if Path::new(path_str).is_absolute() {
+    let path: PathBuf = if Path::new(&path_str).is_absolute() {
         PathBuf::from(path_str)
     } else {
         std::env::current_dir().unwrap().join(path_str)
