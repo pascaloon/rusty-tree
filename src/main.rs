@@ -1,8 +1,13 @@
 use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap, thread, str::FromStr, ffi::OsStr};
 use ansi_term::{Color};
+use counter::Counter;
 use flume::{Sender, Receiver};
+use multimap::MultiMap;
 use serde_derive::Deserialize;
 use clap::{Parser};
+
+mod multimap;
+mod counter;
 
 #[derive(Deserialize, Debug, Clone)]
 struct DirectoryIconSet {
@@ -57,6 +62,7 @@ struct ColorSet {
 #[derive(Deserialize, Debug, Clone)]
 struct Settings {
     ignored_dirs: Vec<String>,
+    extensions_fold_count: usize
 }
 
 impl Settings {
@@ -93,8 +99,8 @@ impl<'a> Renderer<'a> {
         let color = 
             if let Some(color) = self.colors.files.wellknown.get(filename) {
                 color
-            } else if let Some(icon) = Self::find_item_from_extension(&self.colors.files.extensions, filename) {
-                icon
+            } else if let Some(color) = Self::find_item_from_extension(&self.colors.files.extensions, filename) {
+                color
             } else {
                 &self.colors.files.default
         };
@@ -148,16 +154,53 @@ impl<'a> Renderer<'a> {
             println!("{} {}", style.paint(glyph), style.paint(filename));
         }
     }
+
+    pub fn render_skippedfiles(&self, ext: &String, count: i32) {
+        let icon = 
+            if let Some(icon) = self.icons.files.extensions.get(ext) {
+                icon
+            } else {
+                &self.icons.files.default
+            };
+
+        let glyph = self.glyphs.get(icon).unwrap();
+
+        let color = 
+            if let Some(color) = self.colors.files.extensions.get(ext) {
+                color
+            } else {
+                &self.colors.files.default
+        };
+
+        let style = hex_to_color(color).normal();
+        let value = format!("{} {} files...", count, ext);
+        println!("{} {}", style.paint(glyph), style.paint(value));
+    }
 }
 
+enum RenderType {
+    File(FileRenderItem),
+    Dir(FileRenderItem),
+    SkppedFiles(SkippedRenderIten)
+}
+
+struct FileRenderItem {
+    path: PathBuf
+}
+
+struct SkippedRenderIten {
+    ext: String,
+    count: i32
+}
 
 struct RenderItem {
-    path: PathBuf,
-    is_dir: bool,
+    item: RenderType,
     is_last: bool,
     is_leaf: bool,
     depth: usize
 }
+
+
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -204,7 +247,7 @@ fn main() {
     let tx_ref = tx;
 
     thread::spawn(move || {
-        list_files(&path_ref, &settings, 0, &tx_ref);
+        list_files(&path_ref, &settings, 0, &tx_ref, unfold);
     });
 
 
@@ -256,15 +299,15 @@ fn render_files(renderer: &Renderer, rx: Receiver<RenderItem>) {
         }
 
         print!("{} ", renderer.glyphs.get("pipe-h").unwrap());
-        if item.is_dir {
-            renderer.render_dir(&item.path, item.is_leaf);
-        } else {
-            renderer.render_file(&item.path);
-        }
+        match item.item {
+            RenderType::File(f) => renderer.render_file(&f.path),
+            RenderType::Dir(d) => renderer.render_dir(&d.path, item.is_leaf),
+            RenderType::SkppedFiles(s) => renderer.render_skippedfiles(&s.ext, s.count),
+        };
     }
 }
 
-fn list_files(path: &PathBuf, settings: &Settings, depth: usize, tx: &Sender<RenderItem>) {
+fn list_files(path: &PathBuf, settings: &Settings, depth: usize, tx: &Sender<RenderItem>, unfold: bool) {
     let paths = fs::read_dir(path).unwrap();
     let mut files: Vec<DirEntry> = Vec::with_capacity(32);
     let mut dirs: Vec<DirEntry> = Vec::with_capacity(32);
@@ -278,19 +321,70 @@ fn list_files(path: &PathBuf, settings: &Settings, depth: usize, tx: &Sender<Ren
     }
 
     let total = files.len() + dirs.len();
-    let mut c = 0;
+    let mut c = 0;    
 
-    for file in files {
-        c +=1;
-        let is_last = c == total;
+    if unfold || files.len() < settings.extensions_fold_count {
+        for file in files {
+            c +=1;
+            let is_last = c == total;
+    
+            tx.send(RenderItem {
+                item: RenderType::File(FileRenderItem { path: file.path() }),
+                depth: depth,
+                is_leaf: true,
+                is_last: is_last
+            }).unwrap();
+        }
+    } else {
+        
+        // Find all extensions
+        let mut paths: Vec<(PathBuf, Option<String>)> = Vec::with_capacity(files.len());
+        let mut counter: Counter<String> = Counter::new();
+        for file in files {
+            let path = file.path();
+            if let Some(ext) = path.extension() {
+                let ext = ext.to_str().unwrap().to_string();
+                counter.inc(&ext);
+                paths.push((path, Some(ext)));
+            } else {
+                paths.push((path, None));
+            }
+        }
+        
+        let max_fold = settings.extensions_fold_count as i32;
 
-        tx.send(RenderItem {
-            path: file.path(),
-            is_dir: false,
-            depth: depth,
-            is_leaf: true,
-            is_last: is_last
-        }).unwrap();
+        for (k, v) in counter.iter() {
+            if *v >= max_fold {
+                c += std::cmp::max(0, *v) as usize;
+                let is_last = c == total;
+
+                tx.send(RenderItem {
+                    item: RenderType::SkppedFiles(SkippedRenderIten { ext: k.clone(), count: *v }),
+                    depth: depth,
+                    is_leaf: true,
+                    is_last: is_last
+                }).unwrap();
+            }
+        }
+
+        for (path, ext) in paths {
+            let display = match ext {
+                Some(ext) => counter.get(&ext).map_or(true, |c| c < max_fold),
+                None => true,
+            };
+
+            if display {
+                c += 1;
+                let is_last = c == total;
+
+                tx.send(RenderItem {
+                    item: RenderType::File(FileRenderItem { path }),
+                    depth: depth,
+                    is_leaf: true,
+                    is_last: is_last
+                }).unwrap();
+            }
+        }
     }
 
     for dir in dirs {
@@ -301,15 +395,14 @@ fn list_files(path: &PathBuf, settings: &Settings, depth: usize, tx: &Sender<Ren
         let is_last = c == total;
 
         tx.send(RenderItem {
-            path: path,
-            is_dir: true,
+            item: RenderType::Dir(FileRenderItem { path }),
             depth: depth,
             is_leaf: is_ignored,
             is_last: is_last
         }).unwrap();
 
         if !is_ignored {
-            list_files(&dir.path(), settings, depth+1, tx);
+            list_files(&dir.path(), settings, depth+1, tx, unfold);
         }
     }
 }

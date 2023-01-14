@@ -1,7 +1,7 @@
 use std::{collections::HashMap, hash::Hash};
 use smallvec::{SmallVec, smallvec};
 
-struct MultiMap<K, V>
+pub struct MultiMap<K, V>
     where K: Eq + Hash + Clone
 {
     inner: HashMap<K, SmallVec<[V; 1]>>
@@ -28,6 +28,13 @@ impl<K, V> MultiMap<K, V>
                 self.inner.insert(key.clone(), smallvec![value]);
             },
         };
+    }
+
+    pub fn iter(&self) -> Vec<(&K, &[V])> {
+        self.inner
+        .iter()
+        .map(|(k, v)| (k, v.as_slice()))
+        .collect()
     }
 }
 
