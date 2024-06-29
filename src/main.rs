@@ -1,62 +1,13 @@
-use std::{path::{Path, PathBuf}, fs::{File, self, DirEntry}, io::BufReader, collections::HashMap, thread, str::FromStr, ffi::OsStr};
-use ansi_term::{Color};
-use counter::Counter;
-use flume::{Sender, Receiver};
-use multimap::MultiMap;
-use serde_derive::Deserialize;
-use clap::{Parser};
-use glob_match::glob_match;
+use std::{path::PathBuf, str::FromStr, thread};
+use ansi_term::Color;
+use clap::Parser;
+use crate::crawler::{compute, list_files, render_files};
 use crate::settings::Config;
-
 mod multimap;
 mod counter;
 mod settings;
-
-
-
-#[derive(Clone)]
-struct Renderer<'a> {
-    pub config: &'a Config
-}
-impl<'a> Renderer<'a> {
-    pub fn render_file(&self, path: &PathBuf) {
-        let filename_os = path.file_name().unwrap();
-        let filename = filename_os.to_str().unwrap();
-
-        let glyph = self.config.get_associated_file_glyph(filename);
-        let color = self.config.get_associated_file_color(filename);
-        let style = hex_to_color(color).normal();
-        println!("{} {}", style.paint(glyph), style.paint(filename));
-    }
-
-    pub fn render_dir(&self, path: &PathBuf, ignored: bool) {
-        let filename_os = path.file_name().unwrap();
-        let filename = filename_os.to_str().unwrap();
-
-        let glyph = self.config.get_associated_dir_glyph(filename);
-
-        if ignored {
-            let color = &self.config.colors.directories.ignored;
-            let style = hex_to_color(color).normal();
-            println!("{} {}{}", style.paint(glyph), style.paint(filename), style.paint("/..."));
-
-        } else {
-            let color = self.config.get_associated_dir_color(filename);
-            let style = hex_to_color(color).normal();
-            println!("{} {}", style.paint(glyph), style.paint(filename));
-        }
-    }
-
-    pub fn render_skippedfiles(&self, ext: &String, count: i32) {
-        let glyph = self.config.get_associated_ext_glyph(ext);
-
-        let color = self.config.get_associated_ext_color(ext);
-        let style = hex_to_color(color).normal();
-
-        let value = format!("{} {} files...", count, ext);
-        println!("{} {}", style.paint(glyph), style.paint(value));
-    }
-}
+mod crawler;
+mod renderer;
 
 
 fn hex_to_color(hex: &String) -> Color {
@@ -88,23 +39,12 @@ struct RenderItem {
     depth: usize
 }
 
-struct FoundItemEvent {
-    is_dir: bool,
-    is_last: bool,
-    depth: usize,
-    name: PathBuf,
-}
-
-
-
 
 fn main() {
     let config = Config::load();
 
     let path: PathBuf = config.get_clean_current_path();
     println!("{}", path.display());
-
-    let renderer = Renderer {config: &config};
 
     let path_ref = &path;
     let config_ref = &config;
@@ -114,103 +54,19 @@ fn main() {
         let (tx_compute, rx_render) = flume::unbounded();
 
         scope.spawn(move || {
-            list_files2(path_ref, config_ref, 0, &tx_fs);
+            list_files(path_ref, config_ref, 0, &tx_fs);
         });
         scope.spawn(move || {
             compute(config_ref, &rx_compute, &tx_compute);
         });
 
-        render_files(&renderer, rx_render);
+        render_files(&config, rx_render);
     });
 }
 
 
 
 
-fn render_files(renderer: &Renderer, rx: Receiver<RenderItem>) {
-    for item in rx.iter() {
-        for _ in 0..item.depth {
-            print!("{}  ", renderer.config.glyphs.get("pipe-v").unwrap());
-        }
-
-        if item.is_last && item.is_leaf {
-            print!("{}", renderer.config.glyphs.get("pipe-e").unwrap());
-        } else {
-            print!("{}", renderer.config.glyphs.get("pipe-t").unwrap());
-        }
-
-        print!("{} ", renderer.config.glyphs.get("pipe-h").unwrap());
-        match item.item {
-            RenderType::File(f) => renderer.render_file(&f.path),
-            RenderType::Dir(d) => renderer.render_dir(&d.path, item.is_leaf),
-            RenderType::SkppedFiles(s) => renderer.render_skippedfiles(&s.ext, s.count),
-        };
-    }
-}
-
-fn compute(config: &Config, rx_compute: &Receiver<FoundItemEvent>, tx_compute: &Sender<RenderItem>) {
-    for item in rx_compute.iter() {
-        let i = match item.is_dir {
-            true => RenderType::Dir(FileRenderItem { path: item.name }),
-            false => RenderType::File(FileRenderItem { path: item.name}),
-        };
-        tx_compute.send(RenderItem {
-            item: i,
-            depth: item.depth,
-            is_leaf: false,
-            is_last: item.is_last
-        }).unwrap();
-    }
-}
-
-
-fn list_files2(path: &PathBuf, config: &Config, depth: usize, tx_fs: &Sender<FoundItemEvent>) {
-    let paths = fs::read_dir(path).unwrap();
-    let mut files: Vec<DirEntry> = Vec::with_capacity(32);
-    let mut dirs: Vec<DirEntry> = Vec::with_capacity(32);
-    for path in paths {
-        let path = path.unwrap();
-        if path.file_type().unwrap().is_dir() {
-            dirs.push(path);
-        } else {
-            files.push(path);
-        }
-    }
-
-    let total = files.len() + dirs.len();
-    let mut c = 0;
-
-    for file in files {
-        c +=1;
-        let is_last = c == total;
-
-        tx_fs.send(FoundItemEvent {
-            is_dir: false,
-            depth: depth,
-            name: file.path(),
-            is_last: is_last
-        }).unwrap();
-    }
-
-    for dir in dirs {
-        let path = dir.path();
-        let is_ignored = config.is_dir_ignored(&path);
-
-        c +=1;
-        let is_last = c == total;
-
-        tx_fs.send(FoundItemEvent {
-            is_dir: true,
-            depth: depth,
-            name: dir.path(),
-            is_last: is_last
-        }).unwrap();
-
-        if !is_ignored {
-            crate::list_files2(&dir.path(), config, depth+1, tx_fs);
-        }
-    }
-}
 
 
 //
