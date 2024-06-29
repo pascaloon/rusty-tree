@@ -4,6 +4,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use clap::Parser;
+use glob_match::glob_match;
 use serde_derive::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -206,24 +207,20 @@ impl Config {
     }
 
     pub fn get_associated_dir_glyph(&self, filename: &str) -> &String {
-        let icon =
-            if let Some(icon) = self.icons.directories.wellknown.get(filename) {
-                icon
-            } else {
-                &self.icons.files.default
-            };
+        let icon = self.icons.directories.wellknown.get(filename)
+            .unwrap_or(&self.icons.files.default);
         self.glyphs.get(icon).unwrap()
     }
 
     pub fn get_associated_dir_color(&self, filename: &str) -> &String {
-        if let Some(color) = self.colors.directories.wellknown.get(filename) {
-            color
-        } else {
-            &self.colors.files.default
-        }
+        self.colors.directories.wellknown.get(filename).unwrap_or(&self.colors.files.default)
     }
 
-
-
+    pub fn is_file_valid(&self, path: &Path) -> bool {
+        match &self.args.filter {
+            Some(gm) => glob_match(gm, path.to_str().unwrap()),
+            _ => true
+        }
+    }
 
 }

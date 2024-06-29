@@ -50,14 +50,14 @@ fn main() {
     let config_ref = &config;
 
     thread::scope(|scope|{
-        let (tx_fs, rx_compute) = flume::unbounded();
-        let (tx_compute, rx_render) = flume::unbounded();
+        let (tx_io, rx_io) = flume::unbounded();
+        let (tx_render, rx_render) = flume::unbounded();
 
         scope.spawn(move || {
-            list_files(path_ref, config_ref, 0, &tx_fs);
+            list_files(path_ref, config_ref, 0, &tx_io);
         });
         scope.spawn(move || {
-            compute(config_ref, &rx_compute, &tx_compute);
+            compute(config_ref, &rx_io, &tx_render);
         });
 
         render_files(&config, rx_render);
