@@ -218,7 +218,7 @@ impl Config {
 
     pub fn is_file_valid(&self, path: &Path) -> bool {
         match &self.args.filter {
-            Some(gm) => glob_match(gm, path.to_str().unwrap()),
+            Some(gm) => glob_match(gm, path.file_name().unwrap().to_str().unwrap()),
             _ => true
         }
     }

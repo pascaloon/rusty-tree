@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fs;
 use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
@@ -64,15 +65,41 @@ pub fn list_files(path: &PathBuf, config: &Config, depth: usize, tx_io: &Sender<
 }
 
 pub fn compute(config: &Config, rx_io: &Receiver<FoundItemEvent>, tx_render: &Sender<RenderItem>) {
+    let mut uncommited_dirs: VecDeque<FoundItemEvent> = VecDeque::with_capacity(8);
+
     for item in rx_io.iter() {
-        let i = match item.is_dir {
-            true => RenderType::Dir(FileRenderItem { path: item.name }),
-            false => RenderType::File(FileRenderItem { path: item.name}),
-        };
+        if item.is_dir {
+            uncommited_dirs.retain(|d| d.depth < item.depth);
+            if item.is_ignored {
+                tx_render.send(RenderItem {
+                    item: RenderType::Dir(FileRenderItem { path: item.name }),
+                    depth: item.depth,
+                    is_leaf: true,
+                    is_last: item.is_last
+                }).unwrap();
+            } else {
+                uncommited_dirs.push_back(item);
+            }
+            continue;
+        }
+
+        if !config.is_file_valid(item.name.as_path()) {
+            continue
+        }
+
+        for d in uncommited_dirs.pop_front() {
+            tx_render.send(RenderItem {
+                item: RenderType::Dir(FileRenderItem { path: d.name }),
+                depth: d.depth,
+                is_leaf: (d.is_ignored && d.is_last),
+                is_last: d.is_last
+            }).unwrap();
+        }
+
         tx_render.send(RenderItem {
-            item: i,
+            item: RenderType::File(FileRenderItem {path: item.name}),
             depth: item.depth,
-            is_leaf: (item.is_ignored && item.is_last),
+            is_leaf: true,
             is_last: item.is_last
         }).unwrap();
     }
