@@ -1,8 +1,6 @@
 use std::path::PathBuf;
-use flume::Receiver;
-use crate::{hex_to_color, RenderItem, RenderType};
+use crate::hex_to_color;
 use crate::settings::Config;
-
 
 #[derive(Clone)]
 pub struct Renderer<'a> {

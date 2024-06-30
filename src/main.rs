@@ -1,13 +1,12 @@
-use std::{path::PathBuf, str::FromStr, thread};
+use std::{path::PathBuf, thread};
 use ansi_term::Color;
-use clap::Parser;
 use crate::crawler::{compute, list_files, render_files};
 use crate::settings::Config;
 mod multimap;
-mod counter;
 mod settings;
 mod crawler;
 mod renderer;
+mod counter;
 
 
 fn hex_to_color(hex: &String) -> Color {

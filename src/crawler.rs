@@ -1,15 +1,11 @@
 use std::collections::VecDeque;
 use std::fs;
 use std::fs::DirEntry;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use flume::{Receiver, Sender};
-use glob_match::glob_match;
 use crate::{FileRenderItem, RenderItem, RenderType};
 use crate::renderer::Renderer;
 use crate::settings::Config;
-
-
-
 
 pub struct FoundItemEvent {
     is_dir: bool,
@@ -87,7 +83,7 @@ pub fn compute(config: &Config, rx_io: &Receiver<FoundItemEvent>, tx_render: &Se
             continue
         }
 
-        for d in uncommited_dirs.pop_front() {
+        while let Some(d) = uncommited_dirs.pop_front() {
             tx_render.send(RenderItem {
                 item: RenderType::Dir(FileRenderItem { path: d.name }),
                 depth: d.depth,
