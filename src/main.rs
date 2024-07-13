@@ -1,6 +1,6 @@
 use std::{path::PathBuf, thread};
 use ansi_term::Color;
-use crate::crawler::{compute, list_files, render_files};
+use crate::crawler::{compute, IOEvent, list_files, render_files};
 use crate::settings::Config;
 mod multimap;
 mod settings;
@@ -49,8 +49,8 @@ fn main() {
     let config_ref = &config;
 
     thread::scope(|scope|{
-        let (tx_io, rx_io) = flume::unbounded();
-        let (tx_render, rx_render) = flume::unbounded();
+        let (tx_io, rx_io) = crossbeam_channel::unbounded::<IOEvent>();
+        let (tx_render, rx_render) = crossbeam_channel::unbounded::<RenderItem>();
 
         scope.spawn(move || {
             list_files(path_ref, config_ref, 0, &tx_io);
@@ -58,7 +58,6 @@ fn main() {
         scope.spawn(move || {
             compute(config_ref, &rx_io, &tx_render);
         });
-
         render_files(&config, rx_render);
     });
 }

@@ -13,5 +13,5 @@ edition = "2018"
 smallvec = "1.13.2"
 "ansi_term" = "0.12.1"
 "clap" = {version = "4.0.32", features = ["derive"]}
-flume = "0.9.2"
+crossbeam-channel = "0.5.13"
 glob-match = "=0.2.1"

@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::fs;
 use std::fs::DirEntry;
 use std::path::PathBuf;
-use flume::{Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender};
 use smallvec::{SmallVec, smallvec};
 use crate::{FileRenderItem, RenderItem, RenderType};
 use crate::renderer::Renderer;
@@ -129,19 +129,19 @@ pub fn compute(config: &Config, rx_io: &Receiver<IOEvent>, tx_render: &Sender<Re
 }
 
 pub fn render_files(config: &Config, rx_render: Receiver<RenderItem>) {
-    let renderer = Renderer { config };
+    let mut renderer = Renderer::new(config);
     for item in rx_render.iter() {
         for _ in 0..item.depth {
-            print!("{}  ", renderer.config.glyphs.get("pipe-v").unwrap());
+            renderer.render_pipe_v();
         }
 
         if item.is_last && item.is_leaf {
-            print!("{}", renderer.config.glyphs.get("pipe-e").unwrap());
+            renderer.render_pipe_e();
         } else {
-            print!("{}", renderer.config.glyphs.get("pipe-t").unwrap());
+            renderer.render_pipe_t();
         }
 
-        print!("{} ", renderer.config.glyphs.get("pipe-h").unwrap());
+        renderer.render_pipe_h();
         match item.item {
             RenderType::File(f) => renderer.render_file(&f.path),
             RenderType::Dir(d) => renderer.render_dir(&d.path, item.is_leaf),
