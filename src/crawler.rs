@@ -64,22 +64,19 @@ pub fn compute(config: &Config, rx_io: &Receiver<FoundItemEvent>, tx_render: &Se
     let mut uncommited_dirs: VecDeque<FoundItemEvent> = VecDeque::with_capacity(8);
 
     for item in rx_io.iter() {
-        if item.is_dir {
+        if item.is_dir && !item.is_ignored {
             uncommited_dirs.retain(|d| d.depth < item.depth);
-            if item.is_ignored {
-                tx_render.send(RenderItem {
-                    item: RenderType::Dir(FileRenderItem { path: item.name }),
-                    depth: item.depth,
-                    is_leaf: true,
-                    is_last: item.is_last
-                }).unwrap();
-            } else {
+            if !item.is_ignored {
                 uncommited_dirs.push_back(item);
             }
             continue;
         }
 
-        if !config.is_file_valid(item.name.as_path()) {
+        if !item.is_dir && !config.is_file_valid(item.name.as_path()) {
+            continue
+        }
+
+        if item.is_dir && item.is_ignored && config.is_filtered() {
             continue
         }
 
@@ -92,12 +89,29 @@ pub fn compute(config: &Config, rx_io: &Receiver<FoundItemEvent>, tx_render: &Se
             }).unwrap();
         }
 
-        tx_render.send(RenderItem {
-            item: RenderType::File(FileRenderItem {path: item.name}),
-            depth: item.depth,
-            is_leaf: true,
-            is_last: item.is_last
-        }).unwrap();
+        match item.is_dir {
+            // ignored dir node
+            true => {
+                tx_render.send(RenderItem {
+                    item: RenderType::Dir(FileRenderItem { path: item.name }),
+                    depth: item.depth,
+                    is_leaf: true,
+                    is_last: item.is_last
+                }).unwrap();
+            }
+
+            // valid file node
+            false => {
+                tx_render.send(RenderItem {
+                    item: RenderType::File(FileRenderItem {path: item.name}),
+                    depth: item.depth,
+                    is_leaf: true,
+                    is_last: item.is_last
+                }).unwrap();
+            }
+        }
+
+
     }
 }
 

@@ -216,6 +216,10 @@ impl Config {
         self.colors.directories.wellknown.get(filename).unwrap_or(&self.colors.files.default)
     }
 
+    pub fn is_filtered(&self) -> bool {
+        self.args.filter.is_some()
+    }
+
     pub fn is_file_valid(&self, path: &Path) -> bool {
         match &self.args.filter {
             Some(gm) => glob_match(gm, path.file_name().unwrap().to_str().unwrap()),
