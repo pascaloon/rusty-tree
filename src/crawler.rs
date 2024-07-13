@@ -3,19 +3,34 @@ use std::fs;
 use std::fs::DirEntry;
 use std::path::PathBuf;
 use flume::{Receiver, Sender};
+use smallvec::{SmallVec, smallvec};
 use crate::{FileRenderItem, RenderItem, RenderType};
 use crate::renderer::Renderer;
 use crate::settings::Config;
 
-pub struct FoundItemEvent {
-    is_dir: bool,
-    is_last: bool,
-    is_ignored: bool,
-    depth: usize,
-    name: PathBuf,
+pub enum IOEvent {
+    FilesListed(FilesInfo),
+    DirectoryStarted(DirectoryInfo)
 }
 
-pub fn list_files(path: &PathBuf, config: &Config, depth: usize, tx_io: &Sender<FoundItemEvent>) {
+pub struct FileInfo {
+    pub path: PathBuf
+}
+
+pub struct FilesInfo {
+    files: SmallVec<[FileInfo; 4]>,
+    depth: usize
+}
+
+pub struct DirectoryInfo {
+    depth: usize,
+    is_last: bool,
+    is_ignored: bool,
+    name: PathBuf
+}
+
+
+pub fn list_files(path: &PathBuf, config: &Config, depth: usize, tx_io: &Sender<IOEvent>) {
     let paths = fs::read_dir(path).unwrap();
     let mut files: Vec<DirEntry> = Vec::with_capacity(32);
     let mut dirs: Vec<DirEntry> = Vec::with_capacity(32);
@@ -31,28 +46,32 @@ pub fn list_files(path: &PathBuf, config: &Config, depth: usize, tx_io: &Sender<
     let total = files.len() + dirs.len();
     let mut c = 0;
 
+    let mut files_info = FilesInfo {
+        files: smallvec![],
+        depth
+    };
+
     for file in files {
         c +=1;
-        tx_io.send(FoundItemEvent {
-            is_dir: false,
-            is_ignored: false,
-            is_last: (c == total),
-            depth,
-            name: file.path(),
-        }).unwrap();
+        files_info.files.push(FileInfo {
+           path: file.path()
+        });
     }
+
+    tx_io.send(IOEvent::FilesListed(files_info)).unwrap();
 
     for dir in dirs {
         let path = dir.path();
         let is_ignored = config.is_dir_ignored(&path);
         c +=1;
-        tx_io.send(FoundItemEvent {
-            is_dir: true,
-            is_last: (c == total),
+        let is_last = (c == total);
+
+        tx_io.send(IOEvent::DirectoryStarted(DirectoryInfo {
+            is_last,
             is_ignored,
             depth,
-            name: dir.path(),
-        }).unwrap();
+            name: dir.path()
+        })).unwrap();
 
         if !is_ignored {
             list_files(&path, config, depth+1, tx_io);
@@ -60,54 +79,48 @@ pub fn list_files(path: &PathBuf, config: &Config, depth: usize, tx_io: &Sender<
     }
 }
 
-pub fn compute(config: &Config, rx_io: &Receiver<FoundItemEvent>, tx_render: &Sender<RenderItem>) {
-    let mut uncommited_dirs: VecDeque<FoundItemEvent> = VecDeque::with_capacity(8);
+pub fn compute(config: &Config, rx_io: &Receiver<IOEvent>, tx_render: &Sender<RenderItem>) {
+    let mut uncommited_dirs: VecDeque<DirectoryInfo> = VecDeque::with_capacity(8);
+    // let is_filtered_compute = config.is_filtered();
 
-    for item in rx_io.iter() {
-        if item.is_dir && !item.is_ignored {
-            uncommited_dirs.retain(|d| d.depth < item.depth);
-            if !item.is_ignored {
-                uncommited_dirs.push_back(item);
-            }
-            continue;
-        }
+    for event in rx_io.iter() {
+        match event {
+            IOEvent::DirectoryStarted(ds) => {
+                uncommited_dirs.retain(|d| d.depth < ds.depth);
+                if !ds.is_ignored {
+                    uncommited_dirs.push_back(ds);
+                }
+            },
+            IOEvent::FilesListed(fs) => {
+                if !fs.files.iter().any(|f| config.is_file_valid(f.path.as_path())) {
+                    continue;
+                }
 
-        if !item.is_dir && !config.is_file_valid(item.name.as_path()) {
-            continue
-        }
+                while let Some(d) = uncommited_dirs.pop_front() {
+                    tx_render.send(RenderItem {
+                        item: RenderType::Dir(FileRenderItem { path: d.name }),
+                        depth: d.depth,
+                        is_leaf: (d.is_ignored && d.is_last),
+                        is_last: d.is_last
+                    }).unwrap();
+                }
 
-        if item.is_dir && item.is_ignored && config.is_filtered() {
-            continue
-        }
+                let mut c = 0;
+                let files_count = fs.files.len();
+                for file in fs.files {
+                    c += 1;
+                    if !config.is_file_valid(file.path.as_path()) {
+                        continue;
+                    }
 
-        while let Some(d) = uncommited_dirs.pop_front() {
-            tx_render.send(RenderItem {
-                item: RenderType::Dir(FileRenderItem { path: d.name }),
-                depth: d.depth,
-                is_leaf: (d.is_ignored && d.is_last),
-                is_last: d.is_last
-            }).unwrap();
-        }
-
-        match item.is_dir {
-            // ignored dir node
-            true => {
-                tx_render.send(RenderItem {
-                    item: RenderType::Dir(FileRenderItem { path: item.name }),
-                    depth: item.depth,
-                    is_leaf: true,
-                    is_last: item.is_last
-                }).unwrap();
-            }
-
-            // valid file node
-            false => {
-                tx_render.send(RenderItem {
-                    item: RenderType::File(FileRenderItem {path: item.name}),
-                    depth: item.depth,
-                    is_leaf: true,
-                    is_last: item.is_last
-                }).unwrap();
+                    let is_last = (c == files_count);
+                    tx_render.send(RenderItem {
+                        item: RenderType::File(FileRenderItem {path: file.path}),
+                        depth: fs.depth,
+                        is_leaf: true,
+                        is_last: false
+                    }).unwrap();
+                }
             }
         }
 
