@@ -31,11 +31,11 @@ impl<'a, 'b> Renderer<'a, 'b> {
     }
 
     pub fn render_pipe_h(&mut self) {
-        write!(&mut self.writer, "{} ", self.config.glyphs.get("pipe-h").unwrap()).unwrap();
+        write!(&mut self.writer, "{}", self.config.glyphs.get("pipe-h").unwrap()).unwrap();
     }
 
     pub fn render_pipe_t(&mut self) {
-        write!(&mut self.writer, "{} ", self.config.glyphs.get("pipe-t").unwrap()).unwrap();
+        write!(&mut self.writer, "{}", self.config.glyphs.get("pipe-t").unwrap()).unwrap();
     }
 
     pub fn render_pipe_e(&mut self) {
